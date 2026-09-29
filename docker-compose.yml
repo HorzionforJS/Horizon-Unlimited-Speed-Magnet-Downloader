@@ -1,0 +1,115 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      # 下载引擎 Peer 监听 / DHT 端口（默认 42069，= HORIZON_LISTEN_PORT）
+      # 要提升连通率就在安全组放行同端口的 TCP+UDP，并取消下面两行注释
+      # - "42069:42069/udp"
+      # - "42069:42069/tcp"
+    depends_on:
+      - postgres
+      - redis
+      - minio
+    environment:
+      - HORIZON_JWT_SECRET=${HORIZON_JWT_SECRET:-please-change-this-secret}
+      - HORIZON_ADDR=:8080
+      # 数据库：默认 PostgreSQL；设 DB_TYPE=sqlite 可回退（无需 postgres 服务）
+      - HORIZON_DB_TYPE=${DB_TYPE:-postgres}
+      - HORIZON_DB=file:/app/data/horizon.db?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)
+      - HORIZON_POSTGRES_DSN=postgres://${POSTGRES_USER:-horizon}:${POSTGRES_PASSWORD:-change-me}@postgres:5432/${POSTGRES_DB:-horizon}?sslmode=disable
+      - HORIZON_DIR=/app/downloads
+      # Redis 限流
+      - HORIZON_REDIS_ADDR=redis:6379
+      # S3（MinIO）离线导出
+      - HORIZON_S3_ENDPOINT=minio:9000
+      - HORIZON_S3_ACCESS_KEY=${MINIO_ROOT_USER:-horizon}
+      - HORIZON_S3_SECRET_KEY=${MINIO_ROOT_PASSWORD:-change-me}
+      - HORIZON_S3_BUCKET=downloads
+      - HORIZON_S3_USE_SSL=false
+      # 电影天堂元数据（封面/名称/简介）；虚拟为 false 可完全关闭外呼
+      - HORIZON_DYTT_ENABLED=${HORIZON_DYTT_ENABLED:-true}
+      - HORIZON_DYTT_BASE_URL=${HORIZON_DYTT_BASE_URL:-https://dytt.org.cn}
+      - HORIZON_DYTT_REFERER=${HORIZON_DYTT_REFERER:-https://home.dytiantang.com.cn/}
+      - HORIZON_DYTT_CACHE_TTL=${HORIZON_DYTT_CACHE_TTL:-30m}
+      - HORIZON_DYTT_MIN_INTERVAL=${HORIZON_DYTT_MIN_INTERVAL:-400ms}
+      # TMDb 增强（可选）：留空则跳过
+      - HORIZON_TMDB_API_KEY=${HORIZON_TMDB_API_KEY:-}
+      - HORIZON_TMDB_LANGUAGE=${HORIZON_TMDB_LANGUAGE:-zh-CN}
+      # 种子检索：中文片名自动翻译成英文再查英文索引站（否则中文查询返回满屏无关结果）
+      - HORIZON_TRANSLATE_ENABLED=${HORIZON_TRANSLATE_ENABLED:-true}
+      - HORIZON_TRANSLATE_URL=${HORIZON_TRANSLATE_URL:-https://transmart.qq.com/api/imt}
+      - HORIZON_TRANSLATE_TTL=${HORIZON_TRANSLATE_TTL:-24h}
+      - HORIZON_TPB_BASE=${HORIZON_TPB_BASE:-https://apibay.org}
+      # DHT 走 UDP；网络封锁 BT 的 UDP 时设为 false，仅靠 tracker 与 PEX
+      - HORIZON_DHT_ENABLED=${HORIZON_DHT_ENABLED:-true}
+      # uTP 走 UDP；默认关闭强制 TCP（BT/UDP 被封锁时 uTP 会导致「连上 peer 但 0 字节」）
+      - HORIZON_UTP_ENABLED=${HORIZON_UTP_ENABLED:-false}
+    volumes:
+      - ./data:/app/data
+      - ./downloads:/app/downloads
+
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-horizon}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-change-me}
+      - POSTGRES_DB=${POSTGRES_DB:-horizon}
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - ./redisdata:/data
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-horizon}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-change-me}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - ./miniodata:/data
+
+  # 一次性任务：创建 S3 桶（离线导出用）
+  minio-init:
+    image: minio/mc:latest
+    restart: "no"
+    depends_on:
+      - minio
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-horizon}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-change-me}
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD} >/dev/null 2>&1; do sleep 2; done;
+      mc mb --ignore-existing local/downloads;
+      exit 0"
+
+  prometheus:
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus:/etc/prometheus/rules:ro
+
+  grafana:
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-change-me}
+    volumes:
+      - ./grafanadata:/var/lib/grafana

@@ -1,0 +1,29 @@
+# 二进制产物
+horizon-server
+horizon-server.exe
+horizon-server-linux
+horizon-server-linux.*
+
+# 运行时数据（含账号与任务，绝不入库）
+horizon.db
+horizon.db-shm
+horizon.db-wal
+downloads/
+.local.jwt
+local.jwt
+# deploy.sh 会生成这两个文件，内含随机 JWT 密钥
+server.secret
+.env
+
+*.log
+server.pid
+
+# 发布快照：与主模块逐文件一致，只是打包用，源码以主模块为准
+deploy-package/
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
