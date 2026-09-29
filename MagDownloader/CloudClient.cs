@@ -8,16 +8,31 @@ using System.Web.Script.Serialization;
 namespace MagDownloader
 {
     // ============ 云端服务配置（服务器地址，可持久化到本地配置文件） ============
+    //
+    // 这里刻意不内置任何服务器地址。
+    //
+    // 之前的版本硬编码了作者自己的生产机 IP，等于把私有基础设施写死在公开源码里：
+    // 别人 clone 下来跑，请求会打到一台他并不拥有的服务器上；仓库一旦公开，
+    // 这个地址也就跟着泄露了。现在默认是「未配置」，用户在登录页点「服务器设置」
+    // 填一次，地址落到 %LOCALAPPDATA%\MagDownloader\data\cloud.cfg。
+    //
+    // 未配置时不再发起任何网络请求：直接走本地账密，并且在界面上说明原因，
+    // 而不是抛一句「无法连接云端服务（）」这种把空地址拼进括号里的怪话。
     internal static class CloudConfig
     {
-        private const string DefaultUrl = "http://124.222.167.203:8080";
         private static bool _loaded = false;
 
         // 静态可写：测试时可指向本地服务；Load() 会用配置文件覆盖一次。
-        public static string ServerUrl = DefaultUrl;
+        // 空串表示「尚未配置」，任何地方拼 URL 前都要先看 IsConfigured。
+        public static string ServerUrl = "";
 
         public static string ConfigFile { get { return Path.Combine(AppPaths.Data, "cloud.cfg"); } }
 
+        // 是否已经配置过服务器地址。
+        public static bool IsConfigured { get { return ServerUrl.Length > 0; } }
+
+        // Load 只读一次磁盘。任何拼接 ServerUrl 之前都必须先调它，
+        // 否则界面线程拿到的是空串，会退化成「未配置」。
         public static void Load()
         {
             if (_loaded) return;
@@ -43,10 +58,27 @@ namespace MagDownloader
             try
             {
                 AppPaths.Ensure();
-                ServerUrl = url.Trim().TrimEnd('/');
+                ServerUrl = (url ?? "").Trim().TrimEnd('/');
+                _loaded = true;   // 已在本进程内生效，别让 Load() 再用旧文件覆盖回来
+                if (ServerUrl.Length == 0)
+                {
+                    if (File.Exists(ConfigFile)) File.Delete(ConfigFile);
+                    Logger.App("云端服务地址已清空（本地模式）");
+                    return;
+                }
                 File.WriteAllText(ConfigFile, ServerUrl, Encoding.UTF8);
+                Logger.App("云端服务地址已保存：" + ServerUrl);
             }
             catch (Exception ex) { Logger.App("写入云端配置失败：" + ex.Message); }
+        }
+
+        // 未配置时的统一文案：不带空括号，且明确告诉用户去哪里设置。
+        public const string NotConfigured = "尚未配置云端服务器（登录页 →「服务器设置」），当前仅本地模式";
+
+        // 把地址拼进错误信息。未配置时不拼，避免出现「无法连接云端服务（）」。
+        public static string Describe()
+        {
+            return ServerUrl.Length > 0 ? ServerUrl : "未配置";
         }
     }
 
@@ -88,6 +120,13 @@ namespace MagDownloader
         private static CloudResult Post(string path, object cred)
         {
             CloudResult r = new CloudResult();
+            // 没配服务器就别去连了：标记为 NetworkError，上层会安静地回退本地账密。
+            if (!CloudConfig.IsConfigured)
+            {
+                r.NetworkError = true;
+                r.Error = CloudConfig.NotConfigured;
+                return r;
+            }
             string url = CloudConfig.ServerUrl + path;
             try
             {
@@ -147,7 +186,7 @@ namespace MagDownloader
                 else
                 {
                     r.NetworkError = true;
-                    r.Error = "无法连接云端服务（" + CloudConfig.ServerUrl + "）";
+                    r.Error = "无法连接云端服务（" + CloudConfig.Describe() + "）";
                 }
             }
             catch (Exception ex)
@@ -242,6 +281,8 @@ namespace MagDownloader
 
         public static string Fetch()
         {
+            CloudConfig.Load();
+            if (!CloudConfig.IsConfigured) return "";
             try
             {
                 HttpWebRequest req = (HttpWebRequest)WebRequest.Create(CloudConfig.ServerUrl + "/healthz");
@@ -307,6 +348,8 @@ namespace MagDownloader
 
         private static Dictionary<string, object> ApiOnce(string method, string path, object body)
         {
+            if (!CloudConfig.IsConfigured)
+                throw new Exception(CloudConfig.NotConfigured);
             string url = CloudConfig.ServerUrl + path;
             HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
             req.Method = method;
@@ -384,6 +427,8 @@ namespace MagDownloader
 
         private static void DownloadFileOnce(string infoHash, string savePath)
         {
+            if (!CloudConfig.IsConfigured)
+                throw new Exception(CloudConfig.NotConfigured);
             string url = CloudConfig.ServerUrl + "/api/v1/torrents/" + Uri.EscapeDataString(infoHash) + "/file";
             HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
             req.Method = "GET";

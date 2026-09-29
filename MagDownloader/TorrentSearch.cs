@@ -183,6 +183,9 @@ namespace MagDownloader
             List<TorrentResult> list = new List<TorrentResult>();
             if (string.IsNullOrWhiteSpace(q)) return list;
 
+            // 服务器地址从配置文件读（登录页「服务器设置」写入），必须在判断前完成。
+            CloudConfig.Load();
+
             // 优先走云端：服务端会把中文片名翻译成英文再检索，并过滤掉无关结果。
             // 本地直连 apibay 时中文关键词会返回满屏无关热门种子（实测搜「云雀叫天录」
             // 返回的是《蜘蛛侠》），所以云端是中文检索的唯一可靠路径。
@@ -201,13 +204,22 @@ namespace MagDownloader
             if (list == null) list = new List<TorrentResult>();
             list.Sort(delegate(TorrentResult a, TorrentResult b) { return b.Seeders.CompareTo(a.Seeders); });
             if (HasCJK(q))
-                LastHint = "云端服务不可用，已改用本地检索。中文关键词在英文索引站点上结果可能不准确，建议登录云端后重试。";
+            {
+                LastHint = CloudConfig.IsConfigured
+                    ? "云端服务不可用，已改用本地检索。中文关键词在英文索引站点上结果可能不准确，请检查云端服务器地址后重试。"
+                    : CloudConfig.NotConfigured + "，已改用本地检索；中文关键词在英文索引站点上结果可能不准确。";
+            }
+            else if (!CloudConfig.IsConfigured)
+            {
+                LastHint = CloudConfig.NotConfigured;
+            }
             return list;
         }
 
         // 经服务端 /api/v1/search 检索（无需登录）；返回 null 表示云端不可用。
         private static List<TorrentResult> SearchCloud(string q, string cat)
         {
+            if (!CloudConfig.IsConfigured) return null;
             try
             {
                 // limit 不只是省流量：服务端要为每条结果额外翻译片名，
@@ -308,7 +320,7 @@ namespace MagDownloader
                 req.Method = "GET";
                 req.Timeout = timeoutMs;
                 req.ReadWriteTimeout = timeoutMs;
-                req.UserAgent = "MagDownloader/1.2";
+                req.UserAgent = "MagDownloader/" + AppVersion.Number;
                 req.Accept = "application/json";
                 using (HttpWebResponse resp = (HttpWebResponse)req.GetResponse())
                 using (StreamReader sr = new StreamReader(resp.GetResponseStream(), Encoding.UTF8))

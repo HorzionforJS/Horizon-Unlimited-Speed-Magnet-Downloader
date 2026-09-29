@@ -14,7 +14,7 @@ namespace MagDownloader
         private TextBox txtUser, txtPass, txtPass2, txtCode;
         private PictureBox picCaptcha;
         private Label lblConfirm, lblCode, lblError;
-        private LinkLabel lnkRefresh, lnkToggle;
+        private LinkLabel lnkRefresh, lnkToggle, lnkServer;
         private CheckBox chkRemember;
         // 提交时暂存，供 FormClosing 在「认证成功」后写入密码记忆。
         private string lastUser = "", lastPass = "";
@@ -29,12 +29,17 @@ namespace MagDownloader
 
         public string LoggedUser { get { return Session.User; } }
 
+        // 云端是否已配置，直接决定登录框的行为：
+        // 没配就是纯本地账密，不该让用户对着「无法连接云端服务（）」猜。
+        private Label lblServer;
+
         public LoginForm()
         {
+            CloudConfig.Load();
             this.Text = "登录 · 地平线磁力下载";
             this.FormBorderStyle = FormBorderStyle.None;
             this.StartPosition = FormStartPosition.CenterScreen;
-            this.ClientSize = new Size(420, 460);
+            this.ClientSize = new Size(420, 506);
             this.BackColor = Pal.Bg;
             this.Font = new Font("Microsoft YaHei UI", 9F);
             this.DoubleBuffered = true;
@@ -169,7 +174,7 @@ namespace MagDownloader
 
             lblError = new Label();
             lblError.Location = new Point(50, 396);
-            lblError.Size = new Size(320, 18);
+            lblError.Size = new Size(320, 34);
             lblError.ForeColor = Pal.Danger;
             lblError.Font = new Font("Microsoft YaHei UI", 8.5F);
             this.Controls.Add(lblError);
@@ -189,6 +194,24 @@ namespace MagDownloader
             lnkToggle.LinkColor = Pal.Muted;
             lnkToggle.Click += delegate { SetMode(!registerMode); };
             this.Controls.Add(lnkToggle);
+
+            // 服务器设置入口 + 当前云端状态。放在最下面一行，不抢登录的主视线。
+            lnkServer = new LinkLabel();
+            lnkServer.Text = "服务器设置";
+            lnkServer.Font = new Font("Microsoft YaHei UI", 8.5F);
+            lnkServer.AutoSize = true;
+            lnkServer.LinkColor = Pal.Accent;
+            lnkServer.Click += delegate { OpenServerSettings(); };
+            this.Controls.Add(lnkServer);
+
+            lblServer = new Label();
+            lblServer.Font = new Font("Microsoft YaHei UI", 8.5F);
+            // AutoSize=false + AutoEllipsis：地址可能是 https://xxx.yyy.com 这种长串，
+            // 让它自动换行会把底部布局顶乱，直接省略号更稳。
+            lblServer.AutoSize = false;
+            lblServer.AutoEllipsis = true;
+            lblServer.Size = new Size(200, 18);
+            this.Controls.Add(lblServer);
 
             txtUser.Focus();
         }
@@ -233,7 +256,7 @@ namespace MagDownloader
         {
             registerMode = register;
             headTitle = register ? "注册" : "登录";
-            this.ClientSize = new Size(420, register ? 524 : 458);
+            this.ClientSize = new Size(420, register ? 572 : 506);
             btnOk.Text = register ? "注 册" : "登 录";
             lnkToggle.Text = register ? "已有账号？返回登录" : "没有账号？注册新账号";
 
@@ -248,8 +271,12 @@ namespace MagDownloader
             lnkRefresh.Location = new Point(326, top + 34);
             chkRemember.Location = new Point(50, top + 74);
             lblError.Location = new Point(50, top + 96);
-            btnOk.Location = new Point(50, top + 122);
-            lnkToggle.Location = new Point(50, top + 174);
+            btnOk.Location = new Point(50, top + 142);
+            lnkToggle.Location = new Point(50, top + 194);
+
+            // 服务器状态行挂在「注册新账号」下面一行。
+            // 不能贴窗口底部：登录布局里 lnkToggle 的 y 是 426，正好和底边撞上。
+            UpdateServerRow();
 
             UpdateCaptchaRow();
             ClearError();
@@ -327,6 +354,37 @@ namespace MagDownloader
                 lnkRefresh.Visible = true;
                 RefreshCaptcha();
             }
+        }
+
+        // 打开服务器设置。保存后立刻刷新状态行，用户不用重启就能看到生效。
+        private void OpenServerSettings()
+        {
+            if (CloudSettingsUI.Open(this)) UpdateServerRow();
+        }
+
+        // 状态行：把「连的是哪台服务器」明明白白写在登录框上。
+        // 未配置时用强调色提醒一次——这是唯一会让影视库/云端检索失效的原因，
+        // 而默认（不配置）恰恰是所有新用户的初始状态。
+        private void UpdateServerRow()
+        {
+            if (lblServer == null) return;
+            CloudConfig.Load();
+            if (CloudConfig.IsConfigured)
+            {
+                lblServer.Text = "云端：" + CloudConfig.ServerUrl;
+                lblServer.ForeColor = Pal.Muted;
+            }
+            else
+            {
+                lblServer.Text = "未配置云端 · 本地模式（影视库不可用）";
+                lblServer.ForeColor = Pal.Warning;
+            }
+            // 链接宽度要等 Text 设好、AutoSize 量过才准，所以放在文字赋值之后。
+            int y = lnkToggle.Location.Y + 26;
+            int x = 50 + lnkServer.Width + 10;
+            lnkServer.Location = new Point(50, y);
+            lblServer.Location = new Point(x, y);
+            lblServer.Size = new Size(this.ClientSize.Width - x - 14, 18);
         }
 
         private void ShowError(string msg) { lblError.Text = msg; lblError.ForeColor = Pal.Danger; }
@@ -434,7 +492,13 @@ namespace MagDownloader
                 else
                 {
                     Logger.Auth("本地登录失败：" + user + " -> " + msg);
-                    Ui(delegate { Failure(msg); });
+                    // 没配云端时，「密码错误」是本地库的结论，而用户心里的密码往往是
+                    // 云端那套。不解释清楚的话，他会一直以为是自己记错了密码。
+                    string shown = msg;
+                    if (!CloudConfig.IsConfigured)
+                        shown = "未配置云端，已按本地账号校验：" + msg +
+                            "\n若这是云端账号，请点「服务器设置」填写地址。";
+                    Ui(delegate { Failure(shown); });
                 }
             }
         }

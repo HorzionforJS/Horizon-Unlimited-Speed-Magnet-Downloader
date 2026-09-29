@@ -283,9 +283,12 @@ namespace MagDownloader
 
             if (items.Count == 0)
             {
+                // WordBreak：空状态文案可能有多行（比如「未配置云端」那段），
+                // 不加这个标志的话 \n 之后的文字会被裁掉，只剩第一行。
                 using (Font f = new Font("Microsoft YaHei UI", 10F))
                     TextRenderer.DrawText(g, EmptyText, f, ClientRectangle, Pal.Muted,
-                        TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+                        TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
+                        TextFormatFlags.WordBreak | TextFormatFlags.NoPadding);
                 return;
             }
 
@@ -633,6 +636,19 @@ namespace MagDownloader
             if (cat == "short") return "短剧";
             if (cat == "search") return "搜索结果";
             return "电影";
+        }
+
+        // SetUnconfigured：未配置云端服务器时的影视库空状态。
+        //
+        // 不弹对话框：用户可能只是路过点了一下导航。把话写在海报墙的空白处，
+        // 想用的人自然会看到，不想用的人也不用连着关两个弹窗。
+        public void SetUnconfigured()
+        {
+            loading = false;
+            CloseDetail();
+            wall.SetItems(null);
+            wall.EmptyText = "影视库需要云端服务器\n\n请点窗口底部状态栏的「云端」设置服务器地址";
+            SetHint("未配置云端服务器 · 影视库暂不可用");
         }
 
         public void LoadLatest()
