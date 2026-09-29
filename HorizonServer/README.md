@@ -475,7 +475,7 @@ HorizonServer/
 
 桌面端「地平线磁力下载」（`../MagDownloader`）已接入云端登录：
 
-- 新增 `CloudClient.cs`：`CloudConfig`（服务器地址，默认 `http://124.222.167.203:8080`，可配置）+ `CloudAuth`（调 `/api/v1/auth/register` 与 `/login`）。
+- 新增 `CloudClient.cs`：`CloudConfig`（服务器地址，**默认不预置**，由客户端「服务器设置」写入 `data\cloud.cfg`）+ `CloudAuth`（调 `/api/v1/auth/register` 与 `/login`）。
 - 登录/注册**云端优先**：服务器可达则以云端为准；仅当**服务器不可达**（网络错误）时才回退本地账密，保证离线仍可用。
 - 首个云端注册用户自动成为**管理员**（与本地版首次注册一致）。
 - 服务端地址可用 `CloudConfig.Save(url)` 写入本地 `cloud.cfg`。
