@@ -1,0 +1,224 @@
+# Horizon 云端下载服务 Kubernetes 部署清单（单文件，开发/集群版）
+# 使用前：替换 Secret 中的密钥，并将 app 镜像构建推送到你的镜像仓库。
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: horizon
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: horizon-config
+  namespace: horizon
+data:
+  HORIZON_DB_TYPE: "postgres"
+  HORIZON_POSTGRES_DSN: "postgres://horizon:change-me@postgres:5432/horizon?sslmode=disable"
+  HORIZON_REDIS_ADDR: "redis:6379"
+  HORIZON_S3_ENDPOINT: "minio:9000"
+  HORIZON_S3_BUCKET: "downloads"
+  HORIZON_S3_USE_SSL: "false"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: horizon-secret
+  namespace: horizon
+type: Opaque
+stringData:
+  HORIZON_JWT_SECRET: "change-me"
+  HORIZON_S3_ACCESS_KEY: "horizon"
+  HORIZON_S3_SECRET_KEY: "change-me"
+  POSTGRES_PASSWORD: "change-me"
+---
+# ---------- PostgreSQL ----------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: horizon
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: postgres }
+  template:
+    metadata:
+      labels: { app: postgres }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          env:
+            - name: POSTGRES_USER
+              value: horizon
+            - name: POSTGRES_DB
+              value: horizon
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: horizon-secret, key: POSTGRES_PASSWORD }
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: pgdata
+          persistentVolumeClaim: { claimName: pgdata }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pgdata
+  namespace: horizon
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests: { storage: 10Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: horizon
+spec:
+  selector: { app: postgres }
+  ports:
+    - port: 5432
+---
+# ---------- Redis ----------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: horizon
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: redis }
+  template:
+    metadata:
+      labels: { app: redis }
+    spec:
+      containers:
+        - name: redis
+          image: redis:7
+          args: ["redis-server", "--appendonly", "yes"]
+          ports:
+            - containerPort: 6379
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: horizon
+spec:
+  selector: { app: redis }
+  ports:
+    - port: 6379
+---
+# ---------- MinIO（S3 离线导出） ----------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: horizon
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: minio }
+  template:
+    metadata:
+      labels: { app: minio }
+    spec:
+      containers:
+        - name: minio
+          image: minio/minio:latest
+          args: ["server", "/data", "--console-address", ":9001"]
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef: { name: horizon-secret, key: HORIZON_S3_ACCESS_KEY }
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: horizon-secret, key: HORIZON_S3_SECRET_KEY }
+          ports:
+            - containerPort: 9000
+            - containerPort: 9001
+          volumeMounts:
+            - name: miniodata
+              mountPath: /data
+      volumes:
+        - name: miniodata
+          persistentVolumeClaim: { claimName: miniodata }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: miniodata
+  namespace: horizon
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests: { storage: 20Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: horizon
+spec:
+  selector: { app: minio }
+  ports:
+    - { port: 9000 }
+    - { port: 9001 }
+---
+# ---------- App（地平线下载服务） ----------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+  namespace: horizon
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: horizon }
+  template:
+    metadata:
+      labels: { app: horizon }
+    spec:
+      containers:
+        - name: horizon
+          image: horizon-server:latest   # 由 CI 构建推送后替换为完整镜像地址
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef: { name: horizon-config }
+            - secretRef: { name: horizon-secret }
+          volumeMounts:
+            - name: downloads
+              mountPath: /app/downloads
+      volumes:
+        - name: downloads
+          persistentVolumeClaim: { claimName: downloads }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: downloads
+  namespace: horizon
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests: { storage: 50Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: horizon
+  namespace: horizon
+spec:
+  selector: { app: horizon }
+  ports:
+    - port: 8080
+---
+# 生产环境建议在前再加 Ingress / LoadBalancer（TLS 终止 + 域名），此处略。

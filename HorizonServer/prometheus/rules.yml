@@ -1,0 +1,27 @@
+groups:
+  - name: horizon
+    rules:
+      - alert: HorizonDown
+        expr: up{job="horizon"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "地平线下载服务不可用"
+          description: "实例 {{ $labels.instance }} 已停止上报，持续 1 分钟。"
+      - alert: HorizonTooManyActiveTasks
+        expr: horizon_active_tasks > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "活跃下载任务数过高"
+          description: "活跃任务数 {{ $value }}，超过阈值 100。"
+      - alert: HorizonTooManyUsers
+        expr: horizon_users > 10000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "用户数增长异常"
+          description: "用户总数 {{ $value }}，建议关注异常注册。"
