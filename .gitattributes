@@ -1,0 +1,22 @@
+# 统一以 LF 入库，检出时也保持 LF。
+#
+# 为什么不让 git 自动转成 CRLF：deploy.sh / Dockerfile 要拷到 Linux 上执行，
+# 一旦是 CRLF，shell 会报 "$'\r': command not found"。
+# Go 与 C# 编译器都接受 LF，统一成 LF 最省事。
+
+* text=auto eol=lf
+
+# 二进制：禁止任何换行转换
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.webp  binary
+*.gif   binary
+*.ico   binary
+*.exe   binary
+*.dll   binary
+*.db    binary
+*.zip   binary
+
+# go.sum 是机器生成的校验清单，不参与 diff 统计
+go.sum -diff

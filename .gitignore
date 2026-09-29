@@ -1,0 +1,46 @@
+# ============ 构建产物 ============
+MagDownloader/MagDownloader.exe
+HorizonServer/horizon-server
+HorizonServer/horizon-server.exe
+HorizonServer/horizon-server-linux
+HorizonServer/horizon-server-linux.*
+*.zip
+
+# ============ 运行时数据（含账号、任务与密钥，绝不入库）============
+horizon.db
+horizon.db-shm
+horizon.db-wal
+HorizonServer/horizon.db*
+HorizonServer/downloads/
+HorizonServer/local.jwt
+HorizonServer/.local.jwt
+HorizonServer/server.secret
+HorizonServer/.env
+HorizonServer/*.log
+HorizonServer/server.pid
+*.log
+
+# 客户端的运行数据在 %LOCALAPPDATA%，不在仓库内；
+# 但若有人把 data/ 拷到源码目录，这里兜住。
+MagDownloader/data/
+MagDownloader/logs/
+
+# ============ 发布快照 ============
+# 与主模块逐文件一致，只是打包用，源码以主模块为准
+HorizonServer/deploy-package/
+
+# ============ 归档与工具 ============
+MagDownloader/_archive/
+.torrent-tools/
+smoke-dl2/
+smoke-downloads/
+horzion/
+
+# ============ 编辑器 / 系统 ============
+.idea/
+.vscode/
+*.swp
+*.user
+.DS_Store
+Thumbs.db
+desktop.ini
