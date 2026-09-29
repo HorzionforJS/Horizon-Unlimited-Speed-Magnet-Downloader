@@ -1,5 +1,9 @@
 using System;
 using System.Drawing;
+using System.IO;
+using System.Net;
+using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -75,6 +79,187 @@ namespace MagDownloader
             for (int i = 0; i < boxes.Length; i++) Values[i] = boxes[i].Text;
             this.DialogResult = DialogResult.OK;
             this.Close();
+        }
+    }
+
+    // ============ 云端服务器设置对话框 ============
+    //
+    // 客户端不再内置任何服务器地址，用户在这里填一次，地址写进
+    // %LOCALAPPDATA%\MagDownloader\data\cloud.cfg，下次启动自动读回。
+    //
+    // 「测试连接」走 /healthz：它不需要登录，能最直接地回答「这个地址是不是一台
+    // 地平线服务端」，同时把服务端版本号带回来给用户核对。
+    internal class CloudSettingsForm : Form
+    {
+        private TextBox box;
+        private Label lblState;
+        private RButton btnTest;
+
+        public CloudSettingsForm()
+        {
+            this.Text = "云端服务器设置";
+            this.FormBorderStyle = FormBorderStyle.FixedDialog;
+            this.StartPosition = FormStartPosition.CenterParent;
+            this.MaximizeBox = false;
+            this.MinimizeBox = false;
+            this.ShowInTaskbar = false;
+            this.BackColor = Pal.Bg;
+            this.Font = new Font("Microsoft YaHei UI", 9F);
+
+            Label l1 = new Label();
+            l1.Text = "服务器地址（不填 = 本地模式，影视库与云端加速不可用）";
+            l1.ForeColor = Pal.Text;
+            l1.Location = new Point(20, 18);
+            l1.AutoSize = true;
+            this.Controls.Add(l1);
+
+            box = new TextBox();
+            box.Location = new Point(20, 40);
+            box.Size = new Size(400, 30);
+            box.Font = new Font("Microsoft YaHei UI", 10F);
+            box.BorderStyle = BorderStyle.FixedSingle;
+            box.BackColor = Color.FromArgb(26, 32, 56);
+            box.ForeColor = Pal.Text;
+            box.Text = CloudConfig.ServerUrl;
+            this.Controls.Add(box);
+
+            Label l2 = new Label();
+            l2.Text = "例：http://192.168.1.10:8080 或 https://your-domain.com";
+            l2.ForeColor = Pal.Muted;
+            l2.Font = new Font("Microsoft YaHei UI", 8.5F);
+            l2.Location = new Point(20, 74);
+            l2.AutoSize = true;
+            this.Controls.Add(l2);
+
+            btnTest = new RButton("测试连接", Pal.Panel, Color.FromArgb(26, 32, 56), Color.FromArgb(33, 41, 70), Pal.Text);
+            btnTest.Location = new Point(20, 100);
+            btnTest.Size = new Size(110, 32);
+            btnTest.Radius = 10;
+            btnTest.Click += delegate { TestAsync(); };
+            this.Controls.Add(btnTest);
+
+            lblState = new Label();
+            lblState.Location = new Point(140, 106);
+            lblState.Size = new Size(280, 40);
+            lblState.ForeColor = Pal.Muted;
+            lblState.Font = new Font("Microsoft YaHei UI", 8.5F);
+            this.Controls.Add(lblState);
+
+            RButton ok = new RButton("保 存", Pal.Accent, Pal.AccentHi, Pal.AccentLo, Color.White);
+            ok.Location = new Point(230, 152);
+            ok.Size = new Size(90, 34);
+            ok.Radius = 10;
+            ok.Click += delegate { OnSave(); };
+            this.Controls.Add(ok);
+
+            RButton cancel = new RButton("取 消", Pal.Panel, Color.FromArgb(26, 32, 56), Color.FromArgb(33, 41, 70), Pal.Text);
+            cancel.Location = new Point(330, 152);
+            cancel.Size = new Size(90, 34);
+            cancel.Radius = 10;
+            cancel.Click += delegate { this.Close(); };
+            this.Controls.Add(cancel);
+
+            this.ClientSize = new Size(440, 202);
+            // RButton 继承自 Control 而不是 Button，没有 IButtonControl，
+            // 所以不能用 AcceptButton 绑回车——自己拦一下 KeyDown 即可。
+            this.KeyPreview = true;
+            this.KeyDown += delegate(object s, KeyEventArgs e)
+            {
+                if (e.KeyCode == Keys.Escape) { e.Handled = true; this.Close(); }
+                else if (e.KeyCode == Keys.Enter) { e.Handled = true; OnSave(); }
+            };
+        }
+
+        // 地址规整：补全 scheme、去掉尾部斜杠与空格。
+        // 用户十有八九只填「1.2.3.4:8080」，直接存下来的话 WebRequest.Create 会抛
+        // 「不支持 URI 格式」，报错离原因太远。
+        private string Normalize()
+        {
+            string u = (box.Text ?? "").Trim();
+            if (u.Length == 0) return "";
+            if (u.IndexOf("://", StringComparison.Ordinal) < 0) u = "http://" + u;
+            return u.TrimEnd('/');
+        }
+
+        private void TestAsync()
+        {
+            string url = Normalize();
+            if (url.Length == 0) { SetState("请输入服务器地址，或留空以使用本地模式。", Pal.Warning); return; }
+
+            btnTest.Enabled = false;
+            SetState("正在连接 " + url + " …", Pal.Muted);
+
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                string err = null, version = "";
+                try
+                {
+                    HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url + "/healthz");
+                    req.Method = "GET";
+                    req.Timeout = 8000;
+                    req.ReadWriteTimeout = 8000;
+                    using (HttpWebResponse resp = (HttpWebResponse)req.GetResponse())
+                    using (StreamReader sr = new StreamReader(resp.GetResponseStream(), Encoding.UTF8))
+                        version = ParseVersion(sr.ReadToEnd());
+                }
+                catch (Exception ex) { err = ex.Message; }
+
+                if (this.IsDisposed || this.Disposing) return;
+                try
+                {
+                    this.BeginInvoke(new MethodInvoker(delegate
+                    {
+                        btnTest.Enabled = true;
+                        if (err != null) SetState("连接失败：" + err, Pal.Danger);
+                        else if (version.Length > 0)
+                            SetState("连接成功，服务端版本 " + version
+                                + (version == AppVersion.Number ? "（与本客户端一致）" : "（与客户端版本不一致，建议一并升级）"),
+                                version == AppVersion.Number ? Pal.Success : Pal.Warning);
+                        else
+                            SetState("已连上该地址，但它没有返回服务端版本——可能不是地平线服务端。", Pal.Warning);
+                    }));
+                }
+                catch { }
+            });
+        }
+
+        // 不引 JavaScriptSerializer：这里只需要一个字段，正则够了。
+        private static string ParseVersion(string json)
+        {
+            if (string.IsNullOrEmpty(json)) return "";
+            Match m = Regex.Match(json, @"""version""\s*:\s*""([^""]*)""");
+            return m.Success ? m.Groups[1].Value : "";
+        }
+
+        private void SetState(string text, Color color)
+        {
+            lblState.Text = text;
+            lblState.ForeColor = color;
+        }
+
+        private void OnSave()
+        {
+            string url = Normalize();
+            if (url.Length > 0 && url.IndexOf("://", StringComparison.Ordinal) < 0)
+            {
+                SetState("地址格式不对，请以 http:// 或 https:// 开头。", Pal.Danger);
+                return;
+            }
+            CloudConfig.Save(url);
+            this.DialogResult = DialogResult.OK;
+            this.Close();
+        }
+    }
+
+    // ============ 服务器设置入口（登录页 / 主界面共用） ============
+    internal static class CloudSettingsUI
+    {
+        // 返回 true 表示用户点了保存。
+        public static bool Open(IWin32Window owner)
+        {
+            CloudConfig.Load();
+            using (CloudSettingsForm f = new CloudSettingsForm())
+                return f.ShowDialog(owner) == DialogResult.OK;
         }
     }
 

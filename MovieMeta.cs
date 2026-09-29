@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -186,6 +186,9 @@ namespace MagDownloader
 
         private static Dictionary<string, object> Get(string path)
         {
+            CloudConfig.Load();
+            if (!CloudConfig.IsConfigured)
+                throw new Exception(CloudConfig.NotConfigured + "，影视库与云端检索暂不可用。");
             string url = CloudConfig.ServerUrl + path;
             string text = null;
             try
@@ -197,7 +200,7 @@ namespace MagDownloader
                 // 服务端准备好的那句「内容源暂时不可用」永远送不到。
                 req.Timeout = 25000;
                 req.ReadWriteTimeout = 25000;
-                req.UserAgent = "MagDownloader/1.2";
+                req.UserAgent = "MagDownloader/" + AppVersion.Number;
                 req.Accept = "application/json";
                 using (HttpWebResponse resp = (HttpWebResponse)req.GetResponse())
                 using (StreamReader sr = new StreamReader(resp.GetResponseStream(), Encoding.UTF8))
@@ -224,10 +227,10 @@ namespace MagDownloader
                 }
                 bool timeout = we.Status == WebExceptionStatus.Timeout;
                 if (timeout)
-                    throw new Exception("云端服务响应超时（" + CloudConfig.ServerUrl +
+                    throw new Exception("云端服务响应超时（" + CloudConfig.Describe() +
                         "）。若刚点开就失败，通常是内容源（电影天堂）暂时不可用；" +
                         "磁力搜索与下载不受影响。");
-                throw new Exception("无法连接云端服务（" + CloudConfig.ServerUrl + "）：" + we.Message);
+                throw new Exception("无法连接云端服务（" + CloudConfig.Describe() + "）：" + we.Message);
             }
 
             Dictionary<string, object> d = Json.DeserializeObject(text) as Dictionary<string, object>;
@@ -391,14 +394,19 @@ namespace MagDownloader
 
         private static byte[] Download(string url)
         {
-            string proxied = CloudConfig.ServerUrl + "/api/v1/dytt/cover?url=" + Uri.EscapeDataString(url);
+            CloudConfig.Load();
+            // 走服务端代理是为了绕开防盗链 + 把 WebP 转成 JPEG。没配服务器时退回直连：
+            // 能拿到多少算多少，总好过海报墙整片空白。
+            string target = CloudConfig.IsConfigured
+                ? CloudConfig.ServerUrl + "/api/v1/dytt/cover?url=" + Uri.EscapeDataString(url)
+                : url;
             try
             {
-                HttpWebRequest req = (HttpWebRequest)WebRequest.Create(proxied);
+                HttpWebRequest req = (HttpWebRequest)WebRequest.Create(target);
                 req.Method = "GET";
                 req.Timeout = 20000;
                 req.ReadWriteTimeout = 20000;
-                req.UserAgent = "MagDownloader/1.2";
+                req.UserAgent = "MagDownloader/" + AppVersion.Number;
                 using (HttpWebResponse resp = (HttpWebResponse)req.GetResponse())
                 using (Stream rs = resp.GetResponseStream())
                 using (MemoryStream ms = new MemoryStream())

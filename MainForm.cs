@@ -962,6 +962,9 @@ namespace MagDownloader
         private RButton btnCloudAdd, btnCloudRefresh, btnCloudFetch, btnCloudDelete;
         private Label cloudServerHint;
 
+        // 底部状态栏里的云端状态/设置入口
+        private LinkLabel lnkCloudStatus;
+
         // ---- 影视库视图（电影天堂：封面 / 名称 / 简介） ----
         private MovieBrowseView movieView;
 
@@ -1169,6 +1172,25 @@ namespace MagDownloader
             lblCount.AutoSize = true;
             status.Controls.Add(lblCount);
 
+            // 云端状态 + 一键打开服务器设置。
+            // 放在状态栏而不是某个视图里：影视库、搜索、云端下载三处都依赖它，
+            // 用户在哪一页都能看见、都能改。
+            lnkCloudStatus = new LinkLabel();
+            lnkCloudStatus.Font = new Font("Microsoft YaHei UI", 8.5F);
+            lnkCloudStatus.AutoSize = true;
+            lnkCloudStatus.Location = new Point(470, 7);
+            lnkCloudStatus.Click += delegate
+            {
+                if (CloudSettingsUI.Open(this))
+                {
+                    UpdateCloudStatusRow();
+                    if (viewMode == 5) CloudRefresh();
+                    if (viewMode == 4 && movieView != null) movieView.LoadLatest();
+                }
+            };
+            status.Controls.Add(lnkCloudStatus);
+            UpdateCloudStatusRow();
+
             lblUser = new Label();
             lblUser.Text = "当前用户：" + Session.User + (Session.IsAdmin ? "（管理员）" : "");
             lblUser.ForeColor = Pal.Muted;
@@ -1217,6 +1239,26 @@ namespace MagDownloader
 
             // 最大化状态变化时把标题栏按钮的图标换成「还原」方框。
             this.Resize += delegate { SyncWindowButtonGlyphs(); UpdateFreezeMode(); };
+        }
+
+        // UpdateCloudStatusRow 刷新状态栏里的云端状态。
+        // 「未配置」用警示色，因为它不是错误而是还没做的一步 —— 提示要给出动作。
+        private void UpdateCloudStatusRow()
+        {
+            if (lnkCloudStatus == null) return;
+            CloudConfig.Load();
+            if (CloudConfig.IsConfigured)
+            {
+                lnkCloudStatus.Text = "云端：已配置";
+                lnkCloudStatus.LinkColor = Pal.Muted;
+                lnkCloudStatus.LinkBehavior = LinkBehavior.HoverUnderline;
+            }
+            else
+            {
+                lnkCloudStatus.Text = "云端：未配置 · 点此设置（影视库 / 云端加速需要）";
+                lnkCloudStatus.LinkColor = Pal.Warning;
+                lnkCloudStatus.LinkBehavior = LinkBehavior.AlwaysUnderline;
+            }
         }
 
         // IsTextInputFocused 判断焦点是否在可输入控件上。
@@ -2308,13 +2350,33 @@ namespace MagDownloader
             if (m == 3 && searchBox != null) { try { searchBox.Focus(); } catch { } }
             if (m == 4 && movieView != null)
             {
-                // 首次进入自动拉一次最新更新，省掉一次点击
-                if (movieView.Count == 0) movieView.LoadLatest();
-                movieView.FocusSearch();
-                // 左侧导航项也显示条目数，和其它视图保持一致
-                if (nav.Items.Count > 4) { nav.Items[4].Count = movieView.Count; nav.Invalidate(); }
+                // 不能进这个视图：先给状态提示，再让用户自己回上一个视图。
+                // 不能在这里递归调 SetViewMode 回退——nav 的选中项还停在「影视库」，
+                // 下次点它会因为 Selected 没变而不触发事件，界面就卡在这一页了。
+                if (!CloudConfig.IsConfigured)
+                {
+                    movieView.SetUnconfigured();
+                }
+                else
+                {
+                    // 首次进入自动拉一次最新更新，省掉一次点击
+                    if (movieView.Count == 0) movieView.LoadLatest();
+                    movieView.FocusSearch();
+                    // 左侧导航项也显示条目数，和其它视图保持一致
+                    if (nav.Items.Count > 4) { nav.Items[4].Count = movieView.Count; nav.Invalidate(); }
+                }
             }
-            if (m == 5) CloudRefresh();
+            if (m == 5)
+            {
+                if (!CloudConfig.IsConfigured)
+                {
+                    // 云端下载视图本来就有一行服务端提示，直接写在那儿最省事，
+                    // 不用再弹一个每次切过来都出现的对话框。
+                    cloudList.Items.Clear();
+                    cloudServerHint.Text = "未配置云端服务器 · 点状态栏「云端」设置后即可使用";
+                }
+                else CloudRefresh();
+            }
             UpdateToolState();
         }
 
