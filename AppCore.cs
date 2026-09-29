@@ -41,7 +41,7 @@ namespace MagDownloader
     // 不会出现「界面上写着 v1.2、实际已经是 v1.3」这种对不上号的情况。
     internal static class AppVersion
     {
-        public const string Number = "1.3.0";
+        public const string Number = "1.3.1";
 
         public static string Display { get { return "v" + Number; } }
     }

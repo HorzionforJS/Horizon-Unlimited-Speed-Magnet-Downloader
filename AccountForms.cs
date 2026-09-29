@@ -212,9 +212,8 @@ namespace MagDownloader
                         btnTest.Enabled = true;
                         if (err != null) SetState("连接失败：" + err, Pal.Danger);
                         else if (version.Length > 0)
-                            SetState("连接成功，服务端版本 " + version
-                                + (version == AppVersion.Number ? "（与本客户端一致）" : "（与客户端版本不一致，建议一并升级）"),
-                                version == AppVersion.Number ? Pal.Success : Pal.Warning);
+                            SetState("连接成功 · 服务端 " + version + " / 客户端 " + AppVersion.Number,
+                                Pal.Success);
                         else
                             SetState("已连上该地址，但它没有返回服务端版本——可能不是地平线服务端。", Pal.Warning);
                     }));
