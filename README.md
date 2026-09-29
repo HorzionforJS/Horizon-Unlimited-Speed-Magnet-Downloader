@@ -9,7 +9,7 @@
 ![platform](https://img.shields.io/badge/platform-Windows%207%2B-0078D4)
 ![client](https://img.shields.io/badge/client-C%23%20WinForms-512BD4)
 ![server](https://img.shields.io/badge/server-Go%201.26-00ADD8)
-![version](https://img.shields.io/badge/version-v1.3.0-6A5AEB)
+![version](https://img.shields.io/badge/version-v1.3.1-6A5AEB)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 </div>
@@ -46,8 +46,9 @@
 | **MagDownloader** | C# / .NET Framework 4.8 / WinForms | 桌面客户端：搜索、下载、影视库、云端任务管理 |
 | **HorizonServer** | Go 1.26 | 云端服务：BT 离线下载、多源种子检索、影视元数据代理、账号鉴权 |
 
-两者可独立使用，也可配合：客户端不连云端时是纯本地下载器，连上云端后可以把磁力
-丢给服务器 24 小时离线下载，完成后「取回」到本地。
+两者可独立使用，也可配合。**客户端不再内置任何服务器地址**：装好就是纯本地下载器，
+磁力 / BT / HTTP 下载开箱可用；把服务器地址填进「服务器设置」之后，才会启用影视库、
+中文关键词检索、云端离线下载这三项需要服务端的功能。
 
 ### 功能特性
 
@@ -62,6 +63,7 @@
 - **种子搜索**：关键词检索多个公开索引源，中文关键词自动翻译后再搜，中英结果合并去重
 - **影视库**：封面 / 片名 / 简介浏览，支持最新更新、分类、搜索、详情
 - **云端下载**：把磁力交给服务器离线下载，完成后取回本地
+- **服务器设置**：登录页与主界面状态栏均可配置云端地址，带「测试连接」并回显服务端版本
 - **账号体系**：云端优先、不可达自动回退本地账密；图形验证码；连续 5 次错误锁定
 - **记住密码**：用 Windows DPAPI 加密后落盘，密文与当前 Windows 账户绑定
 - **当日免验证码**：成功登录一次后当天不再要求验证码
@@ -130,6 +132,16 @@
 1. 从 [Releases](../../releases) 下载 `MagDownloader.exe`
 2. 双击运行，无需安装
 3. 首次使用点「注册」创建账号（第一个注册的用户是管理员）
+
+**可选：连接云端服务**
+
+不配也能正常下载。想用影视库 / 中文检索 / 云端离线下载时：
+
+1. 点登录页底部的「服务器设置」（或主界面底部状态栏的「云端」）
+2. 填入服务端地址，例如 `http://124.222.167.203:8080` 或 `https://your-domain.com`
+3. 点「测试连接」确认能连上并核对版本号，再点「保存」
+
+地址会写入 `data\cloud.cfg`，下次启动自动读回；留空保存即回到本地模式。
 
 #### 方式二：从源码编译客户端
 
@@ -272,7 +284,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
 ```
 data\users.db          账号数据库
 data\history.json      下载历史
-data\cloud.cfg         云端服务器地址
+data\cloud.cfg         云端服务器地址（留空/不存在 = 本地模式）
 data\login.cfg         DPAPI 加密的记住密码
 data\captcha.day       当日免验证码状态
 logs\app.log           运行日志
@@ -313,6 +325,9 @@ downloads\             下载完成的文件
 
 ### 已知限制
 
+- **客户端不预置任何服务器地址**，影视库与云端离线下载需要先在「服务器设置」里
+  填写自己部署的 HorizonServer 地址。不填则这三项功能不可用（磁力搜索会回退到
+  本地公开索引源），界面会明确提示原因，不会静默失败。
 - **内容源 `dytt.org.cn` 存在不可用的情况**（Cloudflare 522）。服务端会优雅降级为
   503 + 明确提示，并回退过期缓存；磁力搜索与下载不受影响。生产使用建议准备备用源。
 - 磁力解析依赖 DHT / Tracker 网络。在封堵 P2P 的网络（部分公司 WiFi、校园网）下
@@ -352,9 +367,11 @@ A complete magnet download solution in two parts:
 | **MagDownloader** | C# / .NET Framework 4.8 / WinForms | Desktop client: search, download, movie library, cloud task management |
 | **HorizonServer** | Go 1.26 | Cloud service: BT offline download, multi-source torrent search, movie metadata proxy, auth |
 
-They work independently or together. Used alone, the client is a purely local downloader.
-Connected to a server, you can hand a magnet to it for 24/7 offline downloading and
-"fetch back" the finished file to your PC.
+They work independently or together. **The client ships with no server address baked in**:
+out of the box it is a purely local downloader and magnet / BT / HTTP downloads work
+immediately. Only after you enter a server address under "Server settings" do the three
+server-backed features light up: the movie library, Chinese keyword search, and cloud
+offline downloading.
 
 ### Features
 
@@ -370,6 +387,8 @@ Connected to a server, you can hand a magnet to it for 24/7 offline downloading 
   then Chinese and English results are merged and de-duplicated
 - **Movie library** — browse covers, titles and synopses; latest updates, categories, search, detail
 - **Cloud download** — hand a magnet to the server, fetch the result back when done
+- **Server settings** — configure the cloud address from the login screen or the status bar,
+  with a built-in "Test connection" that echoes the server version
 - **Accounts** — cloud-first auth with automatic local fallback; image captcha; lockout after 5 failures
 - **Remember password** — encrypted at rest with Windows DPAPI, bound to the current Windows account
 - **Skip captcha for the day** — after one successful login
@@ -406,6 +425,18 @@ See the tree in the Chinese section above.
 1. Download `MagDownloader.exe` from [Releases](../../releases)
 2. Double-click it — no installation required
 3. Click "注册" (Register) to create an account; the first account becomes the administrator
+
+**Optional: connect to a cloud server**
+
+Everything downloads fine without one. To use the movie library, Chinese keyword search or
+cloud offline downloading:
+
+1. Click "Server settings" at the bottom of the login screen (or "Cloud" in the status bar)
+2. Enter the server address, e.g. `http://124.222.167.203:8080` or `https://your-domain.com`
+3. Click "Test connection" to confirm connectivity and check the version, then "Save"
+
+The address is stored in `data\cloud.cfg` and read back on the next launch. Saving it empty
+returns the client to local-only mode.
 
 #### Option 2: build the client from source
 
@@ -547,7 +578,7 @@ the environment variable wins.
 ```
 data\users.db          account database
 data\history.json      download history
-data\cloud.cfg         cloud server address
+data\cloud.cfg         cloud server address (empty or absent = local-only mode)
 data\login.cfg         DPAPI-encrypted remembered password
 data\captcha.day       skip-captcha-for-today state
 logs\app.log           application log
@@ -595,6 +626,10 @@ What you must handle yourself:
 
 ### Known limitations
 
+- **The client pre-configures no server address.** The movie library and cloud offline
+  downloading require entering the address of your own HorizonServer under "Server settings".
+  Without it those features stay unavailable (torrent search falls back to local public
+  indexers) and the UI always states the reason instead of failing silently.
 - **The metadata source `dytt.org.cn` is sometimes unreachable** (Cloudflare 522). The server
   degrades gracefully to a 503 with a clear message and falls back to stale cache; torrent
   search and downloading are unaffected. Have a backup source ready for production.
