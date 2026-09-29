@@ -1,0 +1,20 @@
+# 构建产物：由 build.ps1 从源码 + aria2c.exe 重新生成。
+# 不入库是为了不让每次重编译都往仓库塞一份新的 5.8MB 二进制
+# （exe 已压缩，git 无法做增量，历史会线性膨胀）。
+# 若确实需要把成品也纳入版本管理：删掉下面这行再 git add MagDownloader.exe
+MagDownloader.exe
+
+# 测试与历史产物归档（保留在磁盘，不入库）
+_archive/
+
+# 运行数据（含账号库与记住的密码，绝不入库）
+data/
+logs/
+*.log
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+*.user
+.DS_Store
+Thumbs.db

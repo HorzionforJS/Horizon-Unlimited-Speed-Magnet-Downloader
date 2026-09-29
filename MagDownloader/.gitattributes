@@ -1,0 +1,15 @@
+# 统一以 LF 入库，检出时也保持 LF。
+# csc（C# 5 编译器）与 PowerShell 都接受 LF，固定下来可避免
+# 「同一份源码在别人机器上保存后整体显示为改动」这类噪音 diff。
+
+* text=auto eol=lf
+
+# 二进制：禁止任何换行转换
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.webp binary
+*.gif  binary
+*.ico  binary
+*.exe  binary
+*.dll  binary
